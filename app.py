@@ -1,18 +1,36 @@
-from grafos import criar_grafo_estacionamento, obter_vagas_vizinhas
-from banco_dados import Usuario, Admin, Manager, Motorista
+from grafos import criar_grafo_estacionamento, obter_vagas_vizinhas, obter_blocos_vizinhos, desenhar_grafo
+from banco_dados import db, Usuario, Admin, Manager, Motorista
 
 # Verificar se o admin existe e criar se necessário
 def verificar_admin():
-    admin_identificador = input("Informe o UID ou email do admin: ").strip()
-    role_admin = Admin.validar_usuario(admin_identificador)
-
-    if not role_admin:
-        print("Admin não encontrado. Vamos criar um novo admin.")
-        email_admin = input("Informe o email do novo admin: ").strip()
-        Admin.criar_usuario(email_admin, "admin")
-        print(f"Admin {email_admin} criado com sucesso.")
+    identificador_admin = input("Informe o UID ou email do admin: ").strip()
+    
+    # Verifica se é um email ou UID pelo formato
+    if "@" in identificador_admin:
+        # Tenta buscar o usuário pelo email
+        user_ref = db.collection('Usuarios').where('email', '==', identificador_admin).get()
     else:
-        print("Admin já existe.")
+        # Busca pelo UID diretamente
+        user_ref = db.collection('Usuarios').document(identificador_admin).get()
+        user_ref = [user_ref] if user_ref.exists else []
+
+    if user_ref:
+        user_data = user_ref[0].to_dict()
+        user_id = user_ref[0].id
+        role = user_data.get("role")
+        
+        if role == "admin":
+            print("Admin encontrado.")
+            admin_instance = Admin(identificador_admin, user_id)
+            return admin_instance
+        else:
+            print("O usuário encontrado não é um admin.")
+            return None
+    else:
+        print("Admin não encontrado. Vamos criar um novo admin.")
+        email = input("Informe o email do novo admin: ")
+        senha = input("Informe a senha para o novo admin: ")
+        return Admin.criar_usuario(email, senha, "admin")
 
 # Ações do admin
 def acoes_admin(estacionamento_nome):
@@ -25,7 +43,7 @@ def acoes_admin(estacionamento_nome):
     if opcao == "1":
         criar_editar_estacionamento(estacionamento_nome)
     elif opcao == "2":
-        buscar_vaga_livre(estacionamento_nome)
+        buscar_vaga_livre(estacionamento_nome, bloco_desejado=None)
     elif opcao == "3":
         criar_usuario()
 
@@ -44,20 +62,26 @@ def criar_editar_estacionamento(estacionamento_nome):
     print(f"Estacionamento '{estacionamento_nome}' salvo/atualizado com sucesso.")
 
 # Buscar vaga livre
-def buscar_vaga_livre(estacionamento_nome):
-    bloco_desejado = input("Informe o bloco desejado (ex: 'Bloco_A'): ").strip()
-    vagas_disponiveis = Usuario.solicitar_vaga(estacionamento_nome, bloco_desejado)
+def buscar_vaga_livre(estacionamento_nome, bloco_desejado):
+    if bloco_desejado == None:
+        bloco_desejado = input("Informe o bloco desejado (ex: 'A'): ").strip()
+    # Tenta obter uma vaga livre no bloco desejado
+    vaga_escolhida = Usuario.solicitar_vaga_livre(estacionamento_nome, bloco_desejado)
 
-    if vagas_disponiveis:
-        print(f"Vagas disponíveis: {vagas_disponiveis}")
+    if vaga_escolhida:
+        print(f"Vaga {vaga_escolhida} no bloco {bloco_desejado} foi ocupada com sucesso.")
     else:
-        bloco_vizinho = obter_blocos_vizinhos(bloco_desejado)
-        vaga_vizinha_disponivel = Usuario.solicitar_vaga(estacionamento_nome, bloco_vizinho)
-        if vaga_vizinha_disponivel:
-            print(f"Vagas no bloco vizinho: {vaga_vizinha_disponivel}")
-            ocupar_vaga(vaga_vizinha_disponivel[0])
+        print(f"Nenhuma vaga livre encontrada no bloco {bloco_desejado}. Buscando em blocos vizinhos...")
+
+        # Busca em blocos vizinhos se não houver vagas no bloco desejado
+        for bloco_vizinho in obter_blocos_vizinhos(bloco_desejado):
+            vaga_escolhida = Usuario.obter_vaga_livre(estacionamento_nome, bloco_vizinho)
+            if vaga_escolhida:
+                print(f"Vaga {vaga_escolhida} no bloco vizinho {bloco_vizinho} foi ocupada com sucesso.")
+                break
         else:
-            print("Não há vagas disponíveis no bloco desejado ou nos blocos vizinhos.")
+            print("Não há vagas disponíveis no bloco desejado nem nos blocos vizinhos.")
+
 
 # Criar novo usuário
 def criar_usuario():
@@ -74,24 +98,37 @@ def acoes_manager(estacionamento_nome):
     opcao = input("Informe a opção desejada (1 ou 2): ").strip()
 
     if opcao == "1":
-        buscar_vaga_livre(estacionamento_nome)
+        bloco_desejado = input("Informe o bloco desejado (ex: 'A'): ").strip()
+        buscar_vaga_livre(estacionamento_nome, bloco_desejado)
     elif opcao == "2":
         status = Manager.obter_resumo_vagas(estacionamento_nome)
         print(f"Status do estacionamento '{estacionamento_nome}': {status}")
 
 # Ações do motorista
 def acoes_motorista(estacionamento_nome):
-    bloco_desejado = input("Informe o bloco desejado (ex: 'Bloco_A'): ").strip()
-    vagas_disponiveis = obter_vagas_disponiveis(estacionamento_nome, bloco_desejado)
+    bloco_desejado = input("Informe o bloco desejado (ex: 'A'): ").strip()
 
-    if vagas_disponiveis:
-        ocupar_vaga(vagas_disponiveis[0])
+    # Tenta obter uma vaga livre no bloco desejado
+    vaga_escolhida = Usuario.solicitar_vaga_livre(estacionamento_nome, bloco_desejado)
+
+    if vaga_escolhida:
+        print(f"Vaga {vaga_escolhida} no bloco {bloco_desejado} foi ocupada com sucesso.")
     else:
         print(f"Todas as vagas do bloco '{bloco_desejado}' estão ocupadas.")
+        
+        # Tenta buscar vaga em blocos vizinhos
+        for bloco_vizinho in Usuario.obter_blocos_vizinhos(bloco_desejado):
+            vaga_escolhida = Usuario.obter_vaga_livre(estacionamento_nome, bloco_vizinho)
+            if vaga_escolhida:
+                print(f"Vaga {vaga_escolhida} no bloco vizinho {bloco_vizinho} foi ocupada com sucesso.")
+                break
+        else:
+            print("Não há vagas disponíveis no bloco desejado nem nos blocos vizinhos.")
+
 
 # Fluxo principal
 def fluxo_principal():
-    verificar_admin()
+    
 
     identificador_usuario = input("Informe o email ou UID do usuário: ").strip()
     role = Admin.validar_usuario(identificador_usuario)

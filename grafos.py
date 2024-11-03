@@ -1,5 +1,6 @@
 import string
 import networkx as nx
+import matplotlib.pyplot as plt
 
 # Variável global para letras dos blocos
 letras = string.ascii_uppercase
@@ -58,9 +59,9 @@ def criar_grafo_estacionamento(num_blocos, linhas_por_bloco, colunas_por_bloco):
 def obter_vagas_vizinhas(grafo, vaga, linhas_por_bloco, colunas_por_bloco):
     """Obtém as vagas vizinhas de uma vaga específica, considerando vizinhos em linha e coluna."""
     partes = vaga.split("_")
-    bloco = partes[0]
-    linha = int(partes[2])  # Extraindo linha
-    coluna = int(partes[3])  # Extraindo coluna
+    bloco = partes[0] + "_" + partes[1]  # Extraindo o nome do bloco (ex: "Bloco_A")
+    linha = int(partes[3])  # Extraindo a linha (a quarta parte)
+    coluna = int(partes[4])  # Extraindo a coluna (a quinta parte)
 
     vizinhas = []
 
@@ -79,3 +80,39 @@ def obter_vagas_vizinhas(grafo, vaga, linhas_por_bloco, colunas_por_bloco):
             vizinhas.append(vizinha)
 
     return vizinhas
+
+def obter_blocos_vizinhos(bloco_atual, num_blocos):
+    """
+    Retorna uma lista com os blocos vizinhos (esquerda e direita) para um bloco específico.
+    """
+    blocos = [chr(i) for i in range(ord('A'), ord('A') + num_blocos)]  # Exemplo: ['A', 'B', 'C', ...]
+    
+    vizinhos = []
+    indice_bloco = blocos.index(bloco_atual)  # Posição do bloco atual
+
+    # Verifica o bloco à esquerda
+    if indice_bloco > 0:
+        vizinhos.append(blocos[indice_bloco - 1])
+
+    # Verifica o bloco à direita
+    if indice_bloco < num_blocos - 1:
+        vizinhos.append(blocos[indice_bloco + 1])
+
+    return vizinhos
+
+
+def desenhar_grafo(grafo, pos):
+    # Definir cores com base no status de ocupação das vagas
+    cores = []
+    for node in grafo.nodes:
+        if 'ocupado' in grafo.nodes[node]:
+            if grafo.nodes[node]['ocupado']:
+                cores.append('red')  # Vaga ocupada: vermelho
+            else:
+                cores.append('green')  # Vaga livre: verde
+        else:
+            cores.append('lightblue')  # Entrada e blocos: azul claro
+
+    plt.figure(figsize=(12, 8))  # Define o tamanho da figura
+    nx.draw(grafo, pos, with_labels=True, node_color=cores, node_size=3000, font_size=10, font_weight='bold')
+    plt.show()

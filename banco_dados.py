@@ -4,7 +4,7 @@ from grafos import gerar_nome_vaga, criar_grafo_estacionamento, obter_vagas_vizi
 import string
 
 # Inicializar o Firebase
-cred = credentials.Certificate('C:/Users/gabri/OneDrive/Área de Trabalho/StopFinder/stopfinder-8e536-firebase-adminsdk-xrdtc-ebc44ac9ac.json')
+cred = credentials.Certificate('StopFinder/stopfinder-8e536-firebase-adminsdk-xrdtc-ebc44ac9ac.json')
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
@@ -43,15 +43,24 @@ class Usuario:
     @staticmethod
     def validar_usuario(user_id):
         """Valida o usuário no Firestore e retorna suas permissões."""
-        usuario = db.collection('Usuarios').document(user_id).get()
-        if usuario.exists:
-            dados = usuario.to_dict()
+        # Verifica se é um email ou UID pelo formato
+        if "@" in user_id:
+            # Tenta buscar o usuário pelo email
+            user_ref = db.collection('Usuarios').where('email', '==', user_id).get()
+        else:
+            # Busca pelo UID diretamente
+            user_ref = db.collection('Usuarios').document(user_id).get()
+            user_ref = [user_ref] if user_ref.exists else []
+
+        # Verifica se encontrou o usuário e retorna o role
+        if user_ref:
+            dados = user_ref[0].to_dict()
             return dados.get('role')
         return None
 
-    def solicitar_vaga_livre(self, estacionamento_nome, bloco_desejado, manager):
+    def solicitar_vaga_livre(estacionamento_nome, bloco_desejado):
         """Solicita ao Manager a obtenção de uma vaga livre."""
-        return manager.obter_vaga_livre(estacionamento_nome, bloco_desejado)
+        return Manager.obter_vaga_livre(estacionamento_nome, bloco_desejado)
 
 class Admin(Usuario):
     def __init__(self, email, user_id):
@@ -60,11 +69,17 @@ class Admin(Usuario):
     @staticmethod
     def salvar_estacionamento(estacionamento_nome, num_blocos, linhas_por_bloco, colunas_por_bloco):
         """Salva o estacionamento e suas vagas no Firestore."""
-        global grafo_estacionamento  # Usar a variável global
+        global grafo_estacionamento
+
+        # Verifica se o estacionamento já existe
         if Admin.estacionamento_existe(estacionamento_nome):
             print(f"Estacionamento '{estacionamento_nome}' já existe.")
             return None
 
+        # Verifica se a lista 'letras' está definida
+        letras = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+        # Cria o documento do estacionamento no Firestore
         est_ref = db.collection('Estacionamentos').document(estacionamento_nome)
         est_ref.set({
             'nome': estacionamento_nome,
@@ -73,27 +88,32 @@ class Admin(Usuario):
             'colunas_por_bloco': colunas_por_bloco
         })
 
-        # Criar o grafo do estacionamento se ainda não existir
+        # Cria o grafo do estacionamento se ainda não existir
         if grafo_estacionamento is None:
             grafo_estacionamento = criar_grafo_estacionamento(num_blocos, linhas_por_bloco, colunas_por_bloco)
 
-        # Adicionar as vagas no Firestore
+        # Adiciona os blocos e vagas ao Firestore
         for i in range(num_blocos):
             bloco_nome_atual = f"Bloco_{letras[i % len(letras)]}"
             bloco_ref = est_ref.collection('blocos').document(bloco_nome_atual)
+            bloco_ref.set({'nome': bloco_nome_atual})  # Certifique-se de que o bloco foi criado antes
 
             for linha in range(1, linhas_por_bloco + 1):
                 for coluna in range(1, colunas_por_bloco + 1):
                     vaga_nome_atual = gerar_nome_vaga(bloco_nome_atual, linha, coluna)
                     vagas_vizinhas = obter_vagas_vizinhas(grafo_estacionamento, vaga_nome_atual, linhas_por_bloco, colunas_por_bloco)
 
-                    bloco_ref.collection('vagas').document(vaga_nome_atual).set({
+                    # Cria o documento da vaga com os detalhes especificados
+                    vaga_ref = bloco_ref.collection('vagas').document(vaga_nome_atual)
+                    vaga_ref.set({
                         'ocupado': False,
                         'nome_vaga': vaga_nome_atual,
                         'linha': linha,
                         'coluna': coluna,
                         'vagas_vizinhas': vagas_vizinhas
                     })
+
+        print(f"Estacionamento '{estacionamento_nome}' e todas as vagas foram salvos com sucesso.")
 
     @staticmethod
     def estacionamento_existe(estacionamento_nome):
