@@ -85,6 +85,12 @@ def obter_blocos_vizinhos(bloco_atual, num_blocos):
     """
     Retorna uma lista com os blocos vizinhos (esquerda e direita) para um bloco específico.
     """
+
+    # Extrai a letra do bloco se o nome completo for passado
+    if bloco_atual.startswith("Bloco_"):
+        bloco_atual = bloco_atual[-1]
+        
+    
     blocos = [chr(i) for i in range(ord('A'), ord('A') + num_blocos)]  # Exemplo: ['A', 'B', 'C', ...]
     
     vizinhos = []
